@@ -5,47 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>CMA Dashboard</title>
 
-<!-- React -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-<!-- Chart -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial;
-  background:#0d1b2e;
-  color:white;
-}
-
-.container{
-  padding:20px;
-}
-
-.upload{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  height:100vh;
-  gap:20px;
-}
-
-.box{
-  border:2px dashed #2e80e8;
-  padding:40px;
-  cursor:pointer;
-  text-align:center;
-}
-
-.card{
-  background:#112240;
-  padding:15px;
-  border-radius:8px;
-  margin-bottom:15px;
-}
+body{margin:0;font-family:Arial;background:#0d1b2e;color:#e8f0fe}
+.layout{display:flex;height:100vh}
+.sidebar{width:220px;background:#112240;padding:10px;overflow:auto}
+.item{padding:8px;cursor:pointer;border-radius:6px}
+.item:hover{background:#1e3a5f}
+.item.active{background:#2e80e8}
+.main{flex:1;padding:20px;overflow:auto}
+.card{background:#112240;padding:15px;border-radius:10px;margin-bottom:15px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+table{width:100%;border-collapse:collapse}
+td,th{padding:6px;border-bottom:1px solid rgba(255,255,255,0.1);font-size:12px}
+.bar{height:4px;background:#1e3a5f;border-radius:3px}
+.fill{height:100%;background:#2e80e8}
+.alert{padding:6px;margin-bottom:6px;border-radius:5px;font-size:12px}
+.red{background:#f05c5c33}
+.orange{background:#f5a62333}
 </style>
 </head>
 
@@ -53,25 +33,16 @@ body{
 <div id="root"></div>
 
 <script>
-const {useState,useMemo,useEffect,useRef} = React;
+const {useState,useMemo,useEffect,useRef}=React;
 
 /* ================= HELPERS ================= */
 
-const FMT = n =>
-  new Intl.NumberFormat("es-AR",{
-    style:"currency",
-    currency:"ARS",
-    maximumFractionDigits:0
-  }).format(n);
+const FMT=n=>new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(n);
+const PCT=n=>(n*100).toFixed(1)+"%";
+const FMT2=n=>n>=1e9?"$"+(n/1e9).toFixed(2)+"B":n>=1e6?"$"+(n/1e6).toFixed(1)+"M":n>=1e3?"$"+(n/1e3).toFixed(0)+"K":FMT(n);
 
-const FMT2 = n =>
-  n>=1e9?"$"+(n/1e9).toFixed(2)+"B":
-  n>=1e6?"$"+(n/1e6).toFixed(1)+"M":
-  n>=1e3?"$"+(n/1e3).toFixed(0)+"K":
-  FMT(n);
-
-const parseArgNum = s=>{
-  if(!s || !s.trim() || s==="-" ) return null;
+const parseArgNum=s=>{
+  if(!s||!s.trim()||s==="-" )return null;
   const v=parseFloat(s.replace(/\./g,"").replace(",","."));
   return isNaN(v)?null:v;
 };
@@ -80,32 +51,25 @@ const parseArgNum = s=>{
 
 function parseCSV(text){
   const lines=text.split(/\r?\n/);
-  const sep = lines[0]?.includes("\t") ? "\t" : ";";
+  const sep=lines[0]?.includes("\t")?"\t":";";
 
-  let tipo="Cash";
-  let moneda="USD";
-  let ticker="USD";
-  let nombre="Dólar";
-
+  let tipo="Cash",moneda="USD",ticker="USD",nombre="Dólar";
   const rows=[];
 
   for(let i=1;i<lines.length;i++){
     const cols=lines[i].split(sep);
     const c0=(cols[0]||"").trim();
-    if(!c0) continue;
+    if(!c0)continue;
 
     const ars=parseArgNum(cols[11]);
 
     if(ars===null){
       const m=c0.match(/^(.+?)\s*-\s*.+?\/\s*(.+)$/);
-      if(m){
-        ticker=m[1].trim();
-        nombre=m[2].trim();
-      }
+      if(m){ticker=m[1].trim();nombre=m[2].trim();}
       continue;
     }
 
-    if(/^\d{3,7}$/.test(c0) && ars>0){
+    if(/^\d{3,7}$/.test(c0)&&ars>0){
       rows.push({comitente:c0,tipo,moneda,ticker,nombre,ars});
     }
   }
@@ -113,27 +77,31 @@ function parseCSV(text){
   return rows;
 }
 
-/* ================= CHART ================= */
+/* ================= CHARTS ================= */
 
 function Donut({data}){
   const ref=useRef();
-
   useEffect(()=>{
-    if(!data.length) return;
-
-    const chart=new Chart(ref.current,{
-      type:"doughnut",
-      data:{
-        labels:data.map(d=>d.label),
-        datasets:[{
-          data:data.map(d=>d.value)
-        }]
-      }
-    });
-
-    return ()=>chart.destroy();
+    if(!data.length)return;
+    const c=new Chart(ref.current,{type:"doughnut",data:{
+      labels:data.map(d=>d.label),
+      datasets:[{data:data.map(d=>d.value)}]
+    }});
+    return()=>c.destroy();
   },[data]);
+  return React.createElement("canvas",{ref});
+}
 
+function Bar({data}){
+  const ref=useRef();
+  useEffect(()=>{
+    if(!data.length)return;
+    const c=new Chart(ref.current,{type:"bar",data:{
+      labels:data.map(d=>d.label),
+      datasets:[{data:data.map(d=>d.value)}]
+    }});
+    return()=>c.destroy();
+  },[data]);
   return React.createElement("canvas",{ref});
 }
 
@@ -142,61 +110,123 @@ function Donut({data}){
 function App(){
 
   const [data,setData]=useState([]);
+  const [sel,setSel]=useState(null);
 
-  const total=useMemo(
-    ()=>data.reduce((s,r)=>s+r.ars,0),
-    [data]
-  );
+  const total=useMemo(()=>data.reduce((s,r)=>s+r.ars,0),[data]);
+
+  const coms=useMemo(()=>[...new Set(data.map(r=>r.comitente))],[data]);
 
   const byTipo=useMemo(()=>{
     const m={};
-    data.forEach(r=>{
-      m[r.tipo]=(m[r.tipo]||0)+r.ars;
-    });
-    return Object.entries(m).map(([k,v])=>({
-      label:k,value:v
-    }));
+    data.forEach(r=>m[r.tipo]=(m[r.tipo]||0)+r.ars);
+    return Object.entries(m).map(([k,v])=>({label:k,value:v}));
   },[data]);
 
-  const handleFile=async file=>{
-    const text=await file.text();
-    const rows=parseCSV(text);
-    setData(rows);
+  const byCom=useMemo(()=>{
+    const m={};
+    data.forEach(r=>m[r.comitente]=(m[r.comitente]||0)+r.ars);
+    return Object.entries(m).map(([k,v])=>({label:k,value:v})).sort((a,b)=>b.value-a.value);
+  },[data]);
+
+  const alerts=useMemo(()=>{
+    const res=[];
+    const map={};
+
+    data.forEach(r=>{
+      if(!map[r.comitente])map[r.comitente]={tot:0,tk:{}};
+      map[r.comitente].tot+=r.ars;
+      map[r.comitente].tk[r.ticker]=(map[r.comitente].tk[r.ticker]||0)+r.ars;
+    });
+
+    Object.entries(map).forEach(([c,d])=>{
+      Object.values(d.tk).forEach(v=>{
+        const p=v/d.tot;
+        if(p>0.4) res.push({c,msg:"Alta concentración",lvl:"red"});
+        else if(p>0.25) res.push({c,msg:"Concentración moderada",lvl:"orange"});
+      });
+    });
+
+    return res;
+  },[data]);
+
+  const rows=sel?data.filter(r=>r.comitente===sel):data;
+
+  const handleFile=async f=>{
+    const text=await f.text();
+    setData(parseCSV(text));
   };
 
   /* ================= UI ================= */
 
   if(!data.length){
-    return React.createElement("div",{className:"upload"},
-      React.createElement("h2",null,"CMA Dashboard"),
-      React.createElement("div",{
-        className:"box",
-        onClick:()=>document.getElementById("file").click()
-      },"Subir CSV"),
-      React.createElement("input",{
-        id:"file",
-        type:"file",
-        style:{display:"none"},
-        onChange:e=>handleFile(e.target.files[0])
-      })
+    return React.createElement("div",{style:{display:"flex",height:"100vh",justifyContent:"center",alignItems:"center"}},
+      React.createElement("input",{type:"file",onChange:e=>handleFile(e.target.files[0])})
     );
   }
 
-  return React.createElement("div",{className:"container"},
-    React.createElement("div",{className:"card"},
-      React.createElement("h2",null,"Total: "+FMT2(total))
+  return React.createElement("div",{className:"layout"},
+
+    /* SIDEBAR */
+    React.createElement("div",{className:"sidebar"},
+      React.createElement("div",{className:"item "+(!sel?"active":""),onClick:()=>setSel(null)},"📊 Global"),
+      ...coms.map(c=>
+        React.createElement("div",{key:c,className:"item "+(sel===c?"active":""),onClick:()=>setSel(c)},c)
+      )
     ),
 
-    React.createElement("div",{style:{width:300}},
-      React.createElement(Donut,{data:byTipo})
+    /* MAIN */
+    React.createElement("div",{className:"main"},
+
+      React.createElement("div",{className:"card"},
+        React.createElement("h2",null,"Total: "+FMT2(total))
+      ),
+
+      /* ALERTS */
+      alerts.map((a,i)=>
+        React.createElement("div",{key:i,className:"alert "+a.lvl},a.c+" - "+a.msg)
+      ),
+
+      React.createElement("div",{className:"grid"},
+        React.createElement("div",{className:"card"},
+          React.createElement("h4",null,"Distribución"),
+          React.createElement(Donut,{data:byTipo})
+        ),
+        React.createElement("div",{className:"card"},
+          React.createElement("h4",null,"Top clientes"),
+          React.createElement(Bar,{data:byCom.slice(0,10)})
+        )
+      ),
+
+      /* TABLE */
+      React.createElement("div",{className:"card"},
+        React.createElement("table",null,
+          React.createElement("thead",null,
+            React.createElement("tr",null,
+              ["Ticker","Cliente","ARS","%"].map(h=>React.createElement("th",{key:h},h))
+            )
+          ),
+          React.createElement("tbody",null,
+            rows.map((r,i)=>
+              React.createElement("tr",{key:i},
+                React.createElement("td",null,r.ticker),
+                React.createElement("td",null,r.comitente),
+                React.createElement("td",null,FMT(r.ars)),
+                React.createElement("td",null,
+                  PCT(r.ars/total),
+                  React.createElement("div",{className:"bar"},
+                    React.createElement("div",{className:"fill",style:{width:(r.ars/total*100)+"%"}})
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
     )
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(
-  React.createElement(App)
-);
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
-
 </body>
 </html>
