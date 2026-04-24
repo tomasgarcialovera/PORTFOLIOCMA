@@ -177,32 +177,41 @@ const SMAP={
 const parseNum=s=>{const v=parseFloat(String(s||"").replace(/\s/g,"").replace(/\./g,"").replace(",","."));return isNaN(v)?0:v;};
 const parseTicker=s=>{const m=s.match(/^([A-Z0-9][A-Z0-9 \-\.]{0,19}?)\s*-\s*\d+\s*\/\s*(.+)$/);return m?{ticker:m[1].trim(),nombre:m[2].trim()}:null;};
 const parseComLine=s=>{
-  const parts=s.trim().split(/\s{2,}|\t/);
-  if(parts.length<3)return null;
-  const c=parts[0].trim();
+  const str=s.trim();
+  // El comitente siempre es el primer token: 3-7 dígitos
+  const firstSpace=str.search(/\s/);
+  if(firstSpace<0)return null;
+  const c=str.slice(0,firstSpace).trim();
   if(!/^\d{3,7}$/.test(c))return null;
 
-  // Extraer todos los tokens numéricos del resto de la línea
-  const rest=parts.slice(1);
+  // Estrategia: buscar el importe ARS que está justo antes del % final
+  // El % está al final: termina con "%" y tiene formato "0,0146%" o "3,26%"
+  // El importe ARS es el número inmediatamente anterior al %
+  // En el PDF puede venir como "$49.819.920,00" o simplemente "49.819.920,00"
 
-  // Quitar token de porcentaje final (ej: "0,46%" o "3,26%")
-  const withoutPct=rest[rest.length-1]?.includes("%")?rest.slice(0,-1):rest;
+  // 1. Quitar el token de porcentaje final
+  const tokens=str.split(/\s+/);
+  let pctIdx=-1;
+  for(let i=tokens.length-1;i>=0;i--){
+    if(tokens[i].includes("%")){pctIdx=i;break;}
+  }
+  const withoutPct=pctIdx>=0?tokens.slice(0,pctIdx):tokens;
 
-  // Quitar token de fecha (formato dd/mm/yyyy o dd-mm-yyyy)
-  const withoutDate=withoutPct.filter(t=>!/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(t.trim()));
-
-  const nums=withoutDate.map(parseNum).filter(v=>!isNaN(v));
-  if(nums.length<2)return null;
-
-  // El importe ARS local es SIEMPRE el último número de la fila
-  // (después de quitar fecha y porcentaje)
-  // Estructura: comitente | disp | noDisp | total | cot_emision | imp_emision | cot_local | imp_local
-  const ars=nums[nums.length-1];
-
-  // Validación: el importe debe ser positivo y mayor que una cotización típica
-  // Si el último número parece una cotización (< 10000 y tiene decimales típicos de FX)
-  // tomamos el penúltimo
-  return{comitente:c,ars:Math.abs(ars)};
+  // 2. El importe ARS es el último token numérico (puede tener $ adelante)
+  // Recorremos de atrás hacia adelante buscando el primer número grande
+  for(let i=withoutPct.length-1;i>=1;i--){
+    const raw=withoutPct[i].replace(/^\$/,"").replace(/\s/g,"");
+    const v=parseNum(raw);
+    if(!isNaN(v)&&Math.abs(v)>0){
+      // Verificar que no sea una fecha (dd-mm-yyyy)
+      if(/^\d{2}[-\/]\d{2}[-\/]\d{4}$/.test(withoutPct[i].trim()))continue;
+      // Verificar que no sea solo la cotización local (que aparece antes del importe)
+      // El importe siempre tiene al menos 3 dígitos antes de la coma
+      // Si el token anterior también es numérico y muy similar, tomamos este
+      return{comitente:c,ars:Math.abs(v)};
+    }
+  }
+  return null;
 };
 
 async function parsePDF(file,onProg,onLog){
