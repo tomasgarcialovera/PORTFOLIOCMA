@@ -181,9 +181,21 @@ const parseComLine=s=>{
   if(parts.length<3)return null;
   const c=parts[0].trim();
   if(!/^\d{3,7}$/.test(c))return null;
-  const nums=parts.slice(1).map(parseNum).filter(v=>Math.abs(v)>0.0001);
-  if(nums.length<2)return null;
-  return{comitente:c,ars:nums[nums.length-2]};
+  // El importe ARS local es el último número grande antes del porcentaje final
+  // Filtramos el % del final y buscamos el último número >= 1 (los importes ARS siempre son >= 1)
+  const raw=parts.slice(1);
+  // Quitar el último token si es porcentaje
+  const withoutPct=raw[raw.length-1]?.includes("%")?raw.slice(0,-1):raw;
+  const nums=withoutPct.map(parseNum);
+  // El importe ARS es el último valor grande (>= 1 peso)
+  // Tomamos el último número que sea >= 1 y no sea una cotización típica (< 10000 con decimales)
+  // Estrategia: el importe es siempre el penúltimo si hay fecha, o el último si no
+  // Más robusto: tomamos el máximo valor absoluto entre los últimos 3 números
+  const candidates=nums.filter(v=>Math.abs(v)>=1).slice(-4);
+  if(!candidates.length)return null;
+  // El importe local ARS siempre es el mayor en valor absoluto entre los candidatos finales
+  const ars=candidates.reduce((best,v)=>Math.abs(v)>Math.abs(best)?v:best,candidates[0]);
+  return{comitente:c,ars};
 };
 
 async function parsePDF(file,onProg,onLog){
