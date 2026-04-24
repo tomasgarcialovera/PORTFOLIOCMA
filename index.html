@@ -3,192 +3,281 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>CMA Dashboard</title>
+<title>CMA Dashboard - Tomás</title>
 
 <!-- React -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-<!-- Chart -->
+<!-- Chart.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial;
-  background:#0d1b2e;
-  color:white;
-}
-
-.container{
-  padding:20px;
-}
-
-.upload{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  height:100vh;
-  gap:20px;
-}
-
-.box{
-  border:2px dashed #2e80e8;
-  padding:40px;
-  cursor:pointer;
-  text-align:center;
-}
-
-.card{
-  background:#112240;
-  padding:15px;
-  border-radius:8px;
-  margin-bottom:15px;
-}
+    body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #0d1b2e;
+        color: #e0f2ff;
+    }
+    .container {
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    .upload {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        gap: 20px;
+    }
+    .box {
+        border: 3px dashed #2e80e8;
+        padding: 50px 80px;
+        cursor: pointer;
+        text-align: center;
+        border-radius: 12px;
+        background: #112240;
+        transition: all 0.3s;
+    }
+    .box:hover {
+        background: #1e3a5f;
+        border-color: #4da3ff;
+    }
+    .card {
+        background: #112240;
+        padding: 20px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .total {
+        font-size: 2.2rem;
+        font-weight: bold;
+        color: #4ade80;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+    th, td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #334155;
+    }
+    th {
+        background: #1e3a5f;
+    }
+    .chart-container {
+        max-width: 380px;
+        margin: 20px auto;
+    }
+    button {
+        background: #2e80e8;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        margin-top: 15px;
+    }
+    button:hover {
+        background: #4da3ff;
+    }
 </style>
 </head>
-
 <body>
 <div id="root"></div>
 
 <script>
-const {useState,useMemo,useEffect,useRef} = React;
+const { useState, useMemo, useEffect, useRef } = React;
 
-/* ================= HELPERS ================= */
-
-const FMT = n =>
-  new Intl.NumberFormat("es-AR",{
-    style:"currency",
-    currency:"ARS",
-    maximumFractionDigits:0
+const FMT = n => 
+  new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0
   }).format(n);
 
-const FMT2 = n =>
-  n>=1e9?"$"+(n/1e9).toFixed(2)+"B":
-  n>=1e6?"$"+(n/1e6).toFixed(1)+"M":
-  n>=1e3?"$"+(n/1e3).toFixed(0)+"K":
+const FMT2 = n => 
+  n >= 1e9 ? "$" + (n/1e9).toFixed(2) + "B" :
+  n >= 1e6 ? "$" + (n/1e6).toFixed(1) + "M" :
+  n >= 1e3 ? "$" + (n/1e3).toFixed(0) + "K" :
   FMT(n);
 
-const parseArgNum = s=>{
-  if(!s || !s.trim() || s==="-" ) return null;
-  const v=parseFloat(s.replace(/\./g,"").replace(",","."));
-  return isNaN(v)?null:v;
+const parseArgNum = s => {
+  if (!s || !s.trim() || s === "-") return null;
+  const v = parseFloat(s.replace(/\./g, "").replace(",", "."));
+  return isNaN(v) ? null : v;
 };
 
-/* ================= PARSER ================= */
-
-function parseCSV(text){
-  const lines=text.split(/\r?\n/);
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/);
   const sep = lines[0]?.includes("\t") ? "\t" : ";";
 
-  let tipo="Cash";
-  let moneda="USD";
-  let ticker="USD";
-  let nombre="Dólar";
+  const rows = [];
 
-  const rows=[];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(sep);
+    if (cols.length < 12) continue;
 
-  for(let i=1;i<lines.length;i++){
-    const cols=lines[i].split(sep);
-    const c0=(cols[0]||"").trim();
-    if(!c0) continue;
+    const c0 = (cols[0] || "").trim();
+    if (!c0) continue;
 
-    const ars=parseArgNum(cols[11]);
+    const ars = parseArgNum(cols[11]);
 
-    if(ars===null){
-      const m=c0.match(/^(.+?)\s*-\s*.+?\/\s*(.+)$/);
-      if(m){
-        ticker=m[1].trim();
-        nombre=m[2].trim();
-      }
-      continue;
-    }
-
-    if(/^\d{3,7}$/.test(c0) && ars>0){
-      rows.push({comitente:c0,tipo,moneda,ticker,nombre,ars});
+    if (ars !== null && ars > 0 && /^\d{3,7}$/.test(c0)) {
+      rows.push({
+        comitente: c0,
+        tipo: "Cash",
+        moneda: "USD",
+        ticker: "USD",
+        nombre: "Dólar",
+        ars: ars
+      });
     }
   }
-
   return rows;
 }
 
-/* ================= CHART ================= */
+function Donut({ data }) {
+  const ref = useRef(null);
 
-function Donut({data}){
-  const ref=useRef();
+  useEffect(() => {
+    if (!data.length || !ref.current) return;
 
-  useEffect(()=>{
-    if(!data.length) return;
+    const colors = ['#4ade80', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#f87171'];
 
-    const chart=new Chart(ref.current,{
-      type:"doughnut",
-      data:{
-        labels:data.map(d=>d.label),
-        datasets:[{
-          data:data.map(d=>d.value)
+    const chart = new Chart(ref.current, {
+      type: 'doughnut',
+      data: {
+        labels: data.map(d => d.label),
+        datasets: [{
+          data: data.map(d => d.value),
+          backgroundColor: colors.slice(0, data.length),
+          borderColor: '#0d1b2e',
+          borderWidth: 3
         }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { color: '#e0f2ff', padding: 15, font: { size: 13 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.label}: ${FMT(ctx.raw)}`
+            }
+          }
+        }
       }
     });
 
-    return ()=>chart.destroy();
-  },[data]);
+    return () => chart.destroy();
+  }, [data]);
 
-  return React.createElement("canvas",{ref});
+  return React.createElement("canvas", { ref, style: { maxWidth: "100%" } });
 }
 
-/* ================= APP ================= */
+function App() {
+  const [data, setData] = useState([]);
+  const [fileName, setFileName] = useState("");
 
-function App(){
+  const total = useMemo(() => data.reduce((s, r) => s + r.ars, 0), [data]);
 
-  const [data,setData]=useState([]);
-
-  const total=useMemo(
-    ()=>data.reduce((s,r)=>s+r.ars,0),
-    [data]
-  );
-
-  const byTipo=useMemo(()=>{
-    const m={};
-    data.forEach(r=>{
-      m[r.tipo]=(m[r.tipo]||0)+r.ars;
+  const byTipo = useMemo(() => {
+    const m = {};
+    data.forEach(r => {
+      m[r.tipo] = (m[r.tipo] || 0) + r.ars;
     });
-    return Object.entries(m).map(([k,v])=>({
-      label:k,value:v
-    }));
-  },[data]);
+    return Object.entries(m).map(([k, v]) => ({ label: k, value: v }));
+  }, [data]);
 
-  const handleFile=async file=>{
-    const text=await file.text();
-    const rows=parseCSV(text);
+  const handleFile = async (file) => {
+    if (!file) return;
+    const text = await file.text();
+    const rows = parseCSV(text);
     setData(rows);
+    setFileName(file.name);
   };
 
-  /* ================= UI ================= */
+  const reset = () => {
+    setData([]);
+    setFileName("");
+  };
 
-  if(!data.length){
-    return React.createElement("div",{className:"upload"},
-      React.createElement("h2",null,"CMA Dashboard"),
-      React.createElement("div",{
-        className:"box",
-        onClick:()=>document.getElementById("file").click()
-      },"Subir CSV"),
-      React.createElement("input",{
-        id:"file",
-        type:"file",
-        style:{display:"none"},
-        onChange:e=>handleFile(e.target.files[0])
+  if (!data.length) {
+    return React.createElement("div", { className: "upload" },
+      React.createElement("h1", null, "CMA Dashboard"),
+      React.createElement("div", {
+        className: "box",
+        onClick: () => document.getElementById("file").click()
+      },
+        React.createElement("h3", null, "📊 Subir archivo CSV de CMA"),
+        React.createElement("p", null, "Arrastra o haz clic aquí")
+      ),
+      React.createElement("input", {
+        id: "file",
+        type: "file",
+        accept: ".csv,.txt",
+        style: { display: "none" },
+        onChange: e => handleFile(e.target.files[0])
       })
     );
   }
 
-  return React.createElement("div",{className:"container"},
-    React.createElement("div",{className:"card"},
-      React.createElement("h2",null,"Total: "+FMT2(total))
+  return React.createElement("div", { className: "container" },
+    React.createElement("div", { className: "header" },
+      React.createElement("h1", null, "CMA Dashboard"),
+      React.createElement("button", { onClick: reset }, "Subir otro archivo")
     ),
 
-    React.createElement("div",{style:{width:300}},
-      React.createElement(Donut,{data:byTipo})
+    React.createElement("div", { className: "card" },
+      React.createElement("h2", null, "Total en ARS"),
+      React.createElement("div", { className: "total" }, FMT2(total)),
+      React.createElement("small", null, fileName ? `Archivo: ${fileName}` : "")
+    ),
+
+    React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: "20px", alignItems: "flex-start" } },
+      React.createElement("div", { className: "card", style: { flex: 1, minWidth: "300px" } },
+        React.createElement("h3", null, "Distribución por Tipo"),
+        React.createElement("div", { className: "chart-container" },
+          React.createElement(Donut, { data: byTipo })
+        )
+      ),
+
+      React.createElement("div", { className: "card", style: { flex: 2, minWidth: "400px" } },
+        React.createElement("h3", null, `Posiciones (${data.length})`),
+        React.createElement("table", null,
+          React.createElement("thead", null,
+            React.createElement("tr", null,
+              React.createElement("th", null, "Comitente"),
+              React.createElement("th", null, "Tipo"),
+              React.createElement("th", null, "Valor ARS")
+            )
+          ),
+          React.createElement("tbody", null,
+            data.map((row, i) =>
+              React.createElement("tr", { key: i },
+                React.createElement("td", null, row.comitente),
+                React.createElement("td", null, row.tipo),
+                React.createElement("td", null, FMT(row.ars))
+              )
+            )
+          )
+        )
+      )
     )
   );
 }
@@ -197,6 +286,5 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   React.createElement(App)
 );
 </script>
-
 </body>
 </html>
