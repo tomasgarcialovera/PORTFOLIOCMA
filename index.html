@@ -12,9 +12,10 @@
 <style>
 body{margin:0;font-family:Arial;background:#0d1b2e;color:white}
 .layout{display:flex;height:100vh}
-.sidebar{width:180px;background:#112240;padding:10px;overflow:auto}
-.item{padding:6px;cursor:pointer}
+.sidebar{width:200px;background:#112240;padding:10px;overflow:auto}
+.item{padding:6px;cursor:pointer;border-radius:4px}
 .item:hover{background:#1e3a5f}
+.item.active{background:#2e80e8}
 .main{flex:1;padding:20px;overflow:auto}
 .card{background:#112240;padding:15px;border-radius:8px;margin-bottom:10px}
 button{cursor:pointer}
@@ -38,7 +39,7 @@ const parseArgNum=s=>{
  return isNaN(v)?null:v;
 };
 
-/* ========= PARSER ROBUSTO ========= */
+/* ========= PARSER ARREGLADO ========= */
 
 function parseCSV(text){
  const lines=text.split(/\r?\n/);
@@ -49,56 +50,81 @@ function parseCSV(text){
 
  for(let i=1;i<lines.length;i++){
    const line=lines[i];
-   if(!line.trim())continue;
+   if(!line.trim()) continue;
 
    const cols=line.split(sep);
    const c0=(cols[0]||"").trim();
-   if(!c0||c0.toLowerCase().startsWith("total"))continue;
+
+   if(!c0) continue;
+   if(c0.toLowerCase().startsWith("total")) continue;
 
    const ars=parseArgNum(cols[11]);
 
    if(ars===null){
-     if(c0.includes("CEDEAR"))tipo="CEDEAR";
-     else if(c0.includes("Acciones"))tipo="Acciones";
-     else if(c0.includes("Obligaciones"))tipo="ON";
-     else if(c0.includes("Fondos"))tipo="FCI";
-     else if(c0.includes("Títulos"))tipo="Bonos";
-     else if(c0.includes("LETRAS"))tipo="Letra";
-     else if(c0.includes("Fideicomiso"))tipo="FF";
-     else if(c0.includes("Futuros"))tipo="Futuro";
-     else if(c0.includes("Dólar")||c0.includes("Pesos"))tipo="Cash";
+     const txt=c0.toLowerCase();
 
-     if(c0.includes("Pesos"))moneda="ARS";
-     else if(c0.includes("Cable"))moneda="USD Cable";
-     else if(c0.includes("Dólar"))moneda="USD";
+     if(txt.includes("cedear")) tipo="CEDEAR";
+     else if(txt.includes("acciones")) tipo="Acciones";
+     else if(txt.includes("obligaciones")) tipo="ON";
+     else if(txt.includes("fondos")) tipo="FCI";
+     else if(txt.includes("títulos")) tipo="Bonos";
+     else if(txt.includes("letras")) tipo="Letra";
+     else if(txt.includes("fideicomiso")) tipo="FF";
+     else if(txt.includes("futuros")) tipo="Futuro";
+     else if(txt.includes("dólar")||txt.includes("pesos")) tipo="Cash";
+
+     if(txt.includes("pesos")) moneda="ARS";
+     else if(txt.includes("cable")) moneda="USD Cable";
+     else if(txt.includes("dólar")) moneda="USD";
 
      const m=c0.match(/^(.+?)\s*-\s*.+?\/\s*(.+)$/);
-     if(m){ticker=m[1].trim();nombre=m[2].trim();}
+     if(m){
+       ticker=m[1].trim();
+       nombre=m[2].trim();
+     }
+
      continue;
    }
 
-   if(/^\d{3,7}$/.test(c0)&&ars>0){
+   if(/^\d{3,7}$/.test(c0) && ars>0){
      rows.push({comitente:c0,tipo,moneda,ticker,nombre,ars});
    }
  }
+
  return rows;
 }
 
-/* ========= CHART ========= */
+/* ========= CHART FIX ========= */
 
 function Donut({data}){
  const ref=useRef();
+ const chartRef=useRef();
+
  useEffect(()=>{
-   if(!data.length)return;
-   const c=new Chart(ref.current,{
+   if(!ref.current) return;
+
+   if(chartRef.current){
+     chartRef.current.destroy();
+   }
+
+   if(!data.length) return;
+
+   chartRef.current=new Chart(ref.current,{
      type:"doughnut",
      data:{
        labels:data.map(d=>d.label),
-       datasets:[{data:data.map(d=>d.value)}]
+       datasets:[{
+         data:data.map(d=>d.value),
+       }]
+     },
+     options:{
+       responsive:true,
+       plugins:{legend:{display:true}}
      }
    });
-   return()=>c.destroy();
+
  },[data]);
+
  return React.createElement("canvas",{ref});
 }
 
@@ -107,6 +133,7 @@ function Donut({data}){
 function App(){
  const [data,setData]=useState([]);
  const [sel,setSel]=useState(null);
+ const [error,setError]=useState("");
 
  const total=useMemo(()=>data.reduce((s,r)=>s+r.ars,0),[data]);
 
@@ -119,13 +146,27 @@ function App(){
  const coms=useMemo(()=>[...new Set(data.map(r=>r.comitente))],[data]);
 
  const handleFile=async file=>{
-   const text=await file.text();
-   setData(parseCSV(text));
+   try{
+     const text=await file.text();
+     const rows=parseCSV(text);
+
+     if(!rows.length){
+       setError("El CSV no tiene datos válidos");
+       return;
+     }
+
+     setError("");
+     setData(rows);
+
+   }catch(e){
+     setError("Error leyendo archivo");
+   }
  };
 
  if(!data.length){
    return React.createElement("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh"}},
      React.createElement("h2",null,"CMA Dashboard"),
+     error && React.createElement("div",{style:{color:"red"}},error),
      React.createElement("button",{onClick:()=>document.getElementById("file").click()},"Subir CSV"),
      React.createElement("input",{id:"file",type:"file",style:{display:"none"},onChange:e=>handleFile(e.target.files[0])})
    );
@@ -133,15 +174,13 @@ function App(){
 
  return React.createElement("div",{className:"layout"},
 
-   /* SIDEBAR */
    React.createElement("div",{className:"sidebar"},
-     React.createElement("div",{className:"item",onClick:()=>setSel(null)},"Global"),
+     React.createElement("div",{className:"item"+(sel===null?" active":""),onClick:()=>setSel(null)},"Global"),
      ...coms.map(c=>
-       React.createElement("div",{key:c,className:"item",onClick:()=>setSel(c)},c)
+       React.createElement("div",{key:c,className:"item"+(sel===c?" active":""),onClick:()=>setSel(c)},c)
      )
    ),
 
-   /* MAIN */
    React.createElement("div",{className:"main"},
 
      React.createElement("div",{className:"card"},
@@ -149,7 +188,7 @@ function App(){
      ),
 
      !sel &&
-     React.createElement("div",{style:{width:300}},
+     React.createElement("div",{style:{width:350}},
        React.createElement(Donut,{data:byTipo})
      ),
 
