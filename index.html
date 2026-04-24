@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>CMA Dashboard</title>
+<title>CMA Dashboard PRO</title>
 
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -26,6 +26,7 @@ td,th{padding:6px;border-bottom:1px solid rgba(255,255,255,0.1);font-size:12px}
 .alert{padding:6px;margin-bottom:6px;border-radius:5px;font-size:12px}
 .red{background:#f05c5c33}
 .orange{background:#f5a62333}
+button{padding:6px 10px;border:none;border-radius:6px;background:#2e80e8;color:white;cursor:pointer}
 </style>
 </head>
 
@@ -35,8 +36,7 @@ td,th{padding:6px;border-bottom:1px solid rgba(255,255,255,0.1);font-size:12px}
 <script>
 const {useState,useMemo,useEffect,useRef}=React;
 
-/* ================= HELPERS ================= */
-
+/* ===== HELPERS ===== */
 const FMT=n=>new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(n);
 const PCT=n=>(n*100).toFixed(1)+"%";
 const FMT2=n=>n>=1e9?"$"+(n/1e9).toFixed(2)+"B":n>=1e6?"$"+(n/1e6).toFixed(1)+"M":n>=1e3?"$"+(n/1e3).toFixed(0)+"K":FMT(n);
@@ -47,8 +47,7 @@ const parseArgNum=s=>{
   return isNaN(v)?null:v;
 };
 
-/* ================= PARSER ================= */
-
+/* ===== PARSER ===== */
 function parseCSV(text){
   const lines=text.split(/\r?\n/);
   const sep=lines[0]?.includes("\t")?"\t":";";
@@ -77,16 +76,15 @@ function parseCSV(text){
   return rows;
 }
 
-/* ================= CHARTS ================= */
-
+/* ===== CHARTS ===== */
 function Donut({data}){
   const ref=useRef();
   useEffect(()=>{
     if(!data.length)return;
-    const c=new Chart(ref.current,{type:"doughnut",data:{
-      labels:data.map(d=>d.label),
-      datasets:[{data:data.map(d=>d.value)}]
-    }});
+    const c=new Chart(ref.current,{
+      type:"doughnut",
+      data:{labels:data.map(d=>d.label),datasets:[{data:data.map(d=>d.value)}]}
+    });
     return()=>c.destroy();
   },[data]);
   return React.createElement("canvas",{ref});
@@ -96,20 +94,33 @@ function Bar({data}){
   const ref=useRef();
   useEffect(()=>{
     if(!data.length)return;
-    const c=new Chart(ref.current,{type:"bar",data:{
-      labels:data.map(d=>d.label),
-      datasets:[{data:data.map(d=>d.value)}]
-    }});
+    const c=new Chart(ref.current,{
+      type:"bar",
+      data:{labels:data.map(d=>d.label),datasets:[{data:data.map(d=>d.value)}]}
+    });
     return()=>c.destroy();
   },[data]);
   return React.createElement("canvas",{ref});
 }
 
-/* ================= APP ================= */
+function Line({data}){
+  const ref=useRef();
+  useEffect(()=>{
+    if(data.length<2)return;
+    const c=new Chart(ref.current,{
+      type:"line",
+      data:{labels:data.map(d=>d.date),datasets:[{data:data.map(d=>d.total)}]}
+    });
+    return()=>c.destroy();
+  },[data]);
+  return React.createElement("canvas",{ref});
+}
 
+/* ===== APP ===== */
 function App(){
 
   const [data,setData]=useState([]);
+  const [history,setHistory]=useState([]);
   const [sel,setSel]=useState(null);
 
   const total=useMemo(()=>data.reduce((s,r)=>s+r.ars,0),[data]);
@@ -128,9 +139,34 @@ function App(){
     return Object.entries(m).map(([k,v])=>({label:k,value:v})).sort((a,b)=>b.value-a.value);
   },[data]);
 
-  const alerts=useMemo(()=>{
-    const res=[];
+  const usdPct=useMemo(()=>{
+    const usd=data.filter(r=>r.moneda.includes("USD")).reduce((s,r)=>s+r.ars,0);
+    return total?usd/total:0;
+  },[data,total]);
+
+  const riskScore=useMemo(()=>{
+    let score=0;
     const map={};
+
+    data.forEach(r=>{
+      if(!map[r.comitente])map[r.comitente]={tot:0,tk:{}};
+      map[r.comitente].tot+=r.ars;
+      map[r.comitente].tk[r.ticker]=(map[r.comitente].tk[r.ticker]||0)+r.ars;
+    });
+
+    Object.values(map).forEach(d=>{
+      const max=Math.max(...Object.values(d.tk))/d.tot;
+      if(max>0.4)score+=2;
+      else if(max>0.25)score+=1;
+
+      if(Object.keys(d.tk).length<=2)score+=1;
+    });
+
+    return score;
+  },[data]);
+
+  const alerts=useMemo(()=>{
+    const res=[],map={};
 
     data.forEach(r=>{
       if(!map[r.comitente])map[r.comitente]={tot:0,tk:{}};
@@ -141,8 +177,8 @@ function App(){
     Object.entries(map).forEach(([c,d])=>{
       Object.values(d.tk).forEach(v=>{
         const p=v/d.tot;
-        if(p>0.4) res.push({c,msg:"Alta concentración",lvl:"red"});
-        else if(p>0.25) res.push({c,msg:"Concentración moderada",lvl:"orange"});
+        if(p>0.4)res.push({c,msg:"Alta concentración",lvl:"red"});
+        else if(p>0.25)res.push({c,msg:"Concentración moderada",lvl:"orange"});
       });
     });
 
@@ -153,10 +189,22 @@ function App(){
 
   const handleFile=async f=>{
     const text=await f.text();
-    setData(parseCSV(text));
+    const rows=parseCSV(text);
+    const tot=rows.reduce((s,r)=>s+r.ars,0);
+
+    setData(rows);
+    setHistory(h=>[...h,{date:new Date().toLocaleDateString(),total:tot}]);
   };
 
-  /* ================= UI ================= */
+  function exportCSV(rows){
+    const header="Ticker,Cliente,ARS\n";
+    const body=rows.map(r=>`${r.ticker},${r.comitente},${r.ars}`).join("\n");
+    const blob=new Blob([header+body]);
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="cartera.csv";
+    a.click();
+  }
 
   if(!data.length){
     return React.createElement("div",{style:{display:"flex",height:"100vh",justifyContent:"center",alignItems:"center"}},
@@ -166,25 +214,27 @@ function App(){
 
   return React.createElement("div",{className:"layout"},
 
-    /* SIDEBAR */
     React.createElement("div",{className:"sidebar"},
       React.createElement("div",{className:"item "+(!sel?"active":""),onClick:()=>setSel(null)},"📊 Global"),
-      ...coms.map(c=>
-        React.createElement("div",{key:c,className:"item "+(sel===c?"active":""),onClick:()=>setSel(c)},c)
-      )
+      ...coms.map(c=>React.createElement("div",{key:c,className:"item "+(sel===c?"active":""),onClick:()=>setSel(c)},c))
     ),
 
-    /* MAIN */
     React.createElement("div",{className:"main"},
 
       React.createElement("div",{className:"card"},
-        React.createElement("h2",null,"Total: "+FMT2(total))
+        React.createElement("h2",null,"Total: "+FMT2(total)),
+        React.createElement("div",null,"USD: "+PCT(usdPct)),
+        React.createElement("div",null,"Risk score: "+riskScore)
       ),
 
-      /* ALERTS */
-      alerts.map((a,i)=>
-        React.createElement("div",{key:i,className:"alert "+a.lvl},a.c+" - "+a.msg)
+      React.createElement("button",{onClick:()=>exportCSV(rows)},"Export CSV"),
+
+      history.length>1 && React.createElement("div",{className:"card"},
+        React.createElement("h4",null,"Evolución"),
+        React.createElement(Line,{data:history})
       ),
+
+      alerts.map((a,i)=>React.createElement("div",{key:i,className:"alert "+a.lvl},a.c+" - "+a.msg)),
 
       React.createElement("div",{className:"grid"},
         React.createElement("div",{className:"card"},
@@ -197,7 +247,6 @@ function App(){
         )
       ),
 
-      /* TABLE */
       React.createElement("div",{className:"card"},
         React.createElement("table",null,
           React.createElement("thead",null,
