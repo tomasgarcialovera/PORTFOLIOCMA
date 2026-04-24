@@ -37,197 +37,204 @@ const {useState,useMemo,useEffect,useRef}=React;
 const FMT=n=>new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(n);
 const FMT2=n=>n>=1e9?"$"+(n/1e9).toFixed(2)+"B":n>=1e6?"$"+(n/1e6).toFixed(1)+"M":FMT(n);
 
+/* ========= FIX NUMEROS ARG ========= */
+
 function parseArgNum(s){
- if(!s) return null;
- let v=s.trim();
- if(!v||v=="-") return null;
+  if(!s) return null;
 
- v=v.replace("-", " -").trim();
- v=v.replace(/\./g,"").replace(",",".");
- const num=parseFloat(v);
+  let v = s.trim();
+  if(!v || v === "-") return null;
 
- return isNaN(num)?null:num;
+  const neg = v.startsWith("-");
+  v = v.replace("-", "");
+
+  if(v.startsWith(",")) v = "0" + v;
+
+  v = v.replace(/\./g,"").replace(",",".");
+  let num = parseFloat(v);
+
+  if(isNaN(num)) return null;
+  return neg ? -num : num;
 }
 
 /* ========= PARSER ========= */
 
 function parseCSV(text){
- const lines=text.split(/\r?\n/);
- const sep="\t";
+  const lines=text.split(/\r?\n/);
+  const sep="\t";
 
- let tipo="Cash",moneda="USD",ticker="USD",nombre="Dólar";
- const rows=[];
+  let tipo="Cash",moneda="USD",ticker="USD",nombre="Dólar";
+  const rows=[];
 
- for(let i=1;i<lines.length;i++){
-   const line=lines[i];
-   if(!line.trim()) continue;
+  for(let i=1;i<lines.length;i++){
+    const line=lines[i];
+    if(!line.trim()) continue;
 
-   const cols=line.split(sep);
-   const c0=(cols[0]||"").trim();
+    const cols=line.split(sep);
+    const c0=(cols[0]||"").trim();
 
-   if(!c0) continue;
-   if(c0.toLowerCase().startsWith("total")) continue;
+    if(!c0) continue;
+    if(c0.toLowerCase().startsWith("total")) continue;
 
-   const ars=parseArgNum(cols[11]);
+    const ars=parseArgNum(cols[11]);
 
-   if(ars===null){
-     const txt=c0.toLowerCase();
+    if(ars===null){
+      const txt=c0.toLowerCase();
 
-     if(txt.includes("cedear")) tipo="CEDEAR";
-     else if(txt.includes("acciones")) tipo="Acciones";
-     else if(txt.includes("obligaciones")) tipo="ON";
-     else if(txt.includes("fondos")) tipo="FCI";
-     else if(txt.includes("títulos")) tipo="Bonos";
-     else if(txt.includes("letras")) tipo="Letra";
-     else if(txt.includes("fideicomiso")) tipo="FF";
-     else if(txt.includes("futuros")) tipo="Futuro";
-     else if(txt.includes("dólar")||txt.includes("pesos")) tipo="Cash";
+      if(txt.includes("cedear")) tipo="CEDEAR";
+      else if(txt.includes("acciones")) tipo="Acciones";
+      else if(txt.includes("obligaciones")) tipo="ON";
+      else if(txt.includes("fondos")) tipo="FCI";
+      else if(txt.includes("títulos")) tipo="Bonos";
+      else if(txt.includes("letras")) tipo="Letra";
+      else if(txt.includes("fideicomiso")) tipo="FF";
+      else if(txt.includes("futuros")) tipo="Futuro";
+      else if(txt.includes("dólar")||txt.includes("pesos")) tipo="Cash";
 
-     if(txt.includes("pesos")) moneda="ARS";
-     else if(txt.includes("cable")) moneda="USD Cable";
-     else if(txt.includes("dólar")) moneda="USD";
+      if(txt.includes("pesos")) moneda="ARS";
+      else if(txt.includes("cable")) moneda="USD Cable";
+      else if(txt.includes("dólar")) moneda="USD";
 
-     const m=c0.match(/^(.+?)\s*-\s*.+?\/\s*(.+)$/);
-     if(m){
-       ticker=m[1].trim();
-       nombre=m[2].trim();
-     }
-     continue;
-   }
+      const m=c0.match(/^(.+?)\s*-\s*.+?\/\s*(.+)$/);
+      if(m){
+        ticker=m[1].trim();
+        nombre=m[2].trim();
+      }
+      continue;
+    }
 
-   if(/^\d{3,7}$/.test(c0)){
-     rows.push({comitente:c0,tipo,moneda,ticker,nombre,ars});
-   }
- }
+    if(/^\d{3,7}$/.test(c0)){
+      rows.push({comitente:c0,tipo,moneda,ticker,nombre,ars});
+    }
+  }
 
- return rows;
+  return rows;
 }
 
 /* ========= CHART ========= */
 
 function Donut({data}){
- const ref=useRef();
- const chartRef=useRef();
+  const ref=useRef();
+  const chartRef=useRef();
 
- useEffect(()=>{
-   if(chartRef.current) chartRef.current.destroy();
-   if(!data.length) return;
+  useEffect(()=>{
+    if(chartRef.current) chartRef.current.destroy();
+    if(!data.length) return;
 
-   chartRef.current=new Chart(ref.current,{
-     type:"doughnut",
-     data:{
-       labels:data.map(d=>d.label),
-       datasets:[{data:data.map(d=>d.value)}]
-     }
-   });
- },[data]);
+    chartRef.current=new Chart(ref.current,{
+      type:"doughnut",
+      data:{
+        labels:data.map(d=>d.label),
+        datasets:[{data:data.map(d=>d.value)}]
+      }
+    });
+  },[data]);
 
- return React.createElement("canvas",{ref});
+  return React.createElement("canvas",{ref});
 }
 
 /* ========= APP ========= */
 
 function App(){
 
- const [data,setData]=useState([]);
- const [sel,setSel]=useState(null);
+  const [data,setData]=useState([]);
+  const [sel,setSel]=useState(null);
 
- const total=useMemo(()=>data.reduce((s,r)=>s+r.ars,0),[data]);
+  const total=useMemo(()=>data.reduce((s,r)=>s+r.ars,0),[data]);
 
- const byTipo=useMemo(()=>{
-   const m={};
-   data.forEach(r=>m[r.tipo]=(m[r.tipo]||0)+r.ars);
-   return Object.entries(m).map(([k,v])=>({label:k,value:v}));
- },[data]);
+  const byTipo=useMemo(()=>{
+    const m={};
+    data.forEach(r=>m[r.tipo]=(m[r.tipo]||0)+r.ars);
+    return Object.entries(m).map(([k,v])=>({label:k,value:v}));
+  },[data]);
 
- const byCliente=useMemo(()=>{
-   const m={};
-   data.forEach(r=>m[r.comitente]=(m[r.comitente]||0)+r.ars);
-   return Object.entries(m)
-     .map(([c,v])=>({c,ars:v}))
-     .sort((a,b)=>b.ars-a.ars);
- },[data]);
+  const byCliente=useMemo(()=>{
+    const m={};
+    data.forEach(r=>m[r.comitente]=(m[r.comitente]||0)+r.ars);
+    return Object.entries(m)
+      .map(([c,v])=>({c,ars:v}))
+      .sort((a,b)=>b.ars-a.ars);
+  },[data]);
 
- const handleFile=async f=>{
-   const txt=await f.text();
-   setData(parseCSV(txt));
- };
+  const handleFile=async f=>{
+    const txt=await f.text();
+    const rows=parseCSV(txt);
+    console.log("Rows parseadas:", rows.length);
+    setData(rows);
+  };
 
- /* ========= ALERTAS ========= */
+  const alerts=useMemo(()=>{
+    const res=[];
+    byCliente.forEach(c=>{
+      if(total>0 && c.ars/total>0.25){
+        res.push({type:"red",text:`${c.c} muy concentrado (${(c.ars/total*100).toFixed(0)}%)`});
+      }
+    });
+    return res;
+  },[byCliente,total]);
 
- const alerts=useMemo(()=>{
-   const res=[];
-   byCliente.forEach(c=>{
-     if(c.ars/total>0.25){
-       res.push({type:"red",text:`${c.c} muy concentrado (${(c.ars/total*100).toFixed(0)}%)`});
-     }
-   });
-   return res;
- },[byCliente,total]);
+  if(!data.length){
+    return React.createElement("div",{style:{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",flexDirection:"column"}},
+      React.createElement("h2",null,"CMA Dashboard PRO"),
+      React.createElement("button",{onClick:()=>document.getElementById("file").click()},"Subir CSV"),
+      React.createElement("input",{id:"file",type:"file",style:{display:"none"},onChange:e=>handleFile(e.target.files[0])})
+    );
+  }
 
- /* ========= UI ========= */
+  return React.createElement("div",{className:"layout"},
 
- if(!data.length){
-   return React.createElement("div",{style:{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",flexDirection:"column"}},
-     React.createElement("h2",null,"CMA Dashboard PRO"),
-     React.createElement("button",{onClick:()=>document.getElementById("file").click()},"Subir CSV"),
-     React.createElement("input",{id:"file",type:"file",style:{display:"none"},onChange:e=>handleFile(e.target.files[0])})
-   );
- }
+    React.createElement("div",{className:"sidebar"},
+      React.createElement("div",{className:"item"+(sel===null?" active":""),onClick:()=>setSel(null)},"Global"),
+      ...byCliente.map(c=>
+        React.createElement("div",{key:c.c,className:"item"+(sel===c.c?" active":""),onClick:()=>setSel(c.c)},
+          c.c+" | "+FMT2(c.ars)
+        )
+      )
+    ),
 
- return React.createElement("div",{className:"layout"},
+    React.createElement("div",{className:"main"},
 
-   React.createElement("div",{className:"sidebar"},
-     React.createElement("div",{className:"item"+(sel===null?" active":""),onClick:()=>setSel(null)},"Global"),
-     ...byCliente.map(c=>
-       React.createElement("div",{key:c.c,className:"item"+(sel===c.c?" active":""),onClick:()=>setSel(c.c)},
-         c.c+" | "+FMT2(c.ars)
-       )
-     )
-   ),
+      React.createElement("div",{className:"row"},
+        React.createElement("div",{className:"card kpi"},"Total: "+FMT2(total)),
+        React.createElement("div",{className:"card kpi"},"Clientes: "+byCliente.length)
+      ),
 
-   React.createElement("div",{className:"main"},
+      !sel &&
+      React.createElement("div",{className:"card"},
+        React.createElement("h3",null,"Distribución"),
+        React.createElement("div",{style:{width:350}},
+          React.createElement(Donut,{data:byTipo})
+        )
+      ),
 
-     React.createElement("div",{className:"row"},
-       React.createElement("div",{className:"card kpi"},"Total: "+FMT2(total)),
-       React.createElement("div",{className:"card kpi"},"Clientes: "+byCliente.length)
-     ),
+      !sel &&
+      React.createElement("div",{className:"card"},
+        React.createElement("h3",null,"Alertas"),
+        alerts.length===0
+          ? "Sin alertas"
+          : alerts.map((a,i)=>
+              React.createElement("div",{key:i,className:"alert "+a.type},a.text)
+            )
+      ),
 
-     !sel &&
-     React.createElement("div",{className:"card"},
-       React.createElement("h3",null,"Distribución"),
-       React.createElement("div",{style:{width:350}},
-         React.createElement(Donut,{data:byTipo})
-       )
-     ),
-
-     !sel &&
-     React.createElement("div",{className:"card"},
-       React.createElement("h3",null,"Alertas"),
-       alerts.length===0
-         ? "Sin alertas"
-         : alerts.map((a,i)=>
-             React.createElement("div",{key:i,className:"alert "+a.type},a.text)
-           )
-     ),
-
-     sel &&
-     React.createElement("div",{className:"card"},
-       React.createElement("h3",null,"Cliente "+sel),
-       ...data.filter(r=>r.comitente===sel)
-         .map((r,i)=>
-           React.createElement("div",{key:i},
-             r.ticker+" | "+r.tipo+" | "+FMT(r.ars)
-           )
-         )
-     )
-   )
- );
+      sel &&
+      React.createElement("div",{className:"card"},
+        React.createElement("h3",null,"Cliente "+sel),
+        ...data.filter(r=>r.comitente===sel)
+          .map((r,i)=>
+            React.createElement("div",{key:i},
+              r.ticker+" | "+r.tipo+" | "+FMT(r.ars)
+            )
+          )
+      )
+    )
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(
- React.createElement(App)
+  React.createElement(App)
 );
 </script>
+
 </body>
 </html>
