@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>CMA Dashboard PRO v2</title>
+<title>CMA Dashboard PRO v3</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -228,6 +228,39 @@ td.r{text-align:right;font-family:monospace;font-size:11px}
 .file-slot-label{font-size:9px;color:#2a5070;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
 .file-slot-name{font-size:11px;color:#7ab0d0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .file-slot-meta{font-size:9px;color:#1e3a50;margin-top:2px}
+
+/* ── TICKER DRILL MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:200;display:flex;align-items:center;justify-content:center}
+.modal{background:#0c1a2e;border:1px solid #1e3a5a;border-radius:8px;width:520px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.7)}
+.modal-head{padding:12px 16px 10px;border-bottom:1px solid #162035;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.modal-title{flex:1;font-size:13px;font-weight:700;color:#a0c8e8}
+.modal-close{background:none;border:none;color:#3a6080;cursor:pointer;font-size:18px;line-height:1;padding:0 4px}
+.modal-close:hover{color:#90b8d0}
+.modal-body{flex:1;overflow-y:auto;padding:12px 16px}
+.modal-stat{display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap}
+.modal-stat-item{background:#091626;border-radius:5px;padding:7px 12px;flex:1;min-width:100px}
+.modal-stat-label{font-size:9px;color:#2a5070;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.modal-stat-val{font-size:15px;font-weight:700;color:#c0d8f0}
+/* clickable row in modal */
+.modal-cli-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:4px;cursor:pointer;transition:background .1s;margin-bottom:2px}
+.modal-cli-row:hover{background:#112238}
+.modal-cli-num{font-size:11px;font-weight:700;color:#6a9ab8;min-width:52px}
+.modal-cli-bar-wrap{flex:1;height:5px;background:#091626;border-radius:3px;overflow:hidden}
+.modal-cli-bar{height:100%;border-radius:3px;transition:width .3s}
+.modal-cli-ars{font-size:10px;color:#3a6080;min-width:60px;text-align:right;font-family:monospace}
+.modal-cli-pct{font-size:10px;color:#2a5068;min-width:36px;text-align:right}
+
+/* ── RISK COMPARISON (cliente vs global) ── */
+.risk-cmp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
+.risk-cmp-item{background:#091626;border-radius:5px;padding:7px 9px}
+.risk-cmp-label{font-size:9px;color:#2a5070;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.risk-cmp-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.risk-cmp-who{font-size:9px;color:#3a6080}
+.risk-cmp-val{font-size:12px;font-weight:700;font-family:monospace}
+.risk-cmp-delta{font-size:9px;font-weight:700;margin-top:3px;padding:1px 5px;border-radius:3px;display:inline-block}
+.rcd-over{background:#201008;color:#d09050}
+.rcd-under{background:#081828;color:#4090c8}
+.rcd-ok{background:#082010;color:#40b060}
 </style>
 </head>
 <body>
@@ -261,7 +294,23 @@ const DUR_REF = {
   'YCA6O':2.8,'YPF':2.5,'PANAR':3.2,'MRCAD':2.2,'IRCFS':2.0,
   'TGS2O':2.5,'MOLA':2.8,'CRES':1.8,'GNNOS':2.2,
 };
-function getDur(ticker){ return DUR_REF[ticker.toUpperCase()]||null; }
+function getDur(ticker){
+  const t=ticker.toUpperCase();
+  if(DUR_REF[t]!==undefined)return DUR_REF[t];
+  // Fallback por prefijo: matchea el key más largo que sea prefijo del ticker
+  const keys=Object.keys(DUR_REF);
+  let best=null, bestLen=0;
+  for(const k of keys){
+    if(t.startsWith(k)&&k.length>bestLen){best=k;bestLen=k.length;}
+  }
+  // También intentar que el ticker sea prefijo del key (ej. "YPF" matchea "YCA6O" no, pero "GD3" matchea "GD30")
+  if(!best){
+    for(const k of keys){
+      if(k.startsWith(t.slice(0,4))&&t.slice(0,4).length>=3&&k.length>bestLen){best=k;bestLen=k.length;}
+    }
+  }
+  return best?DUR_REF[best]:null;
+}
 
 /* ═══════════════════ PARSER ═══════════════════ */
 const SEC_KW=['Dólar','Pesos','Acciones','Fondos','CEDEAR','Fideicomiso',
@@ -477,12 +526,6 @@ function exportCSV(rows,fn){
   URL.revokeObjectURL(url);
 }
 
-/* ═══════════════════ PRINT CLIENTE ═══════════════════ */
-// FIX #7: imprimir vista del cliente como PDF
-function printCliente(comitente, fecha, tc, cliTotal, cliTotalUSD, byTipo){
-  window.print();
-}
-
 /* ═══════════════════ DURATION CALCULATOR ═══════════════════ */
 // FIX duration ponderada: calcula duration ponderada de la cartera
 function calcDuration(rows){
@@ -501,10 +544,11 @@ function calcDuration(rows){
 /* ═══════════════════ APP ═══════════════════ */
 function App(){
   // Multi-slot: slot 0 = principal, slot 1 = comparación
-  const [slots,setSlots]     = useState([null,null]); // [{rows,fecha,tc,debug},null]
-  const [activeSlot,setAS]   = useState(0);           // qué slot estamos viendo
+  const [slots,setSlots]     = useState([null,null]);
+  const [activeSlot,setAS]   = useState(0);
   const [drag,setDrag]       = useState(false);
-  const [loadTarget,setLT]   = useState(0);           // a qué slot cargar
+  // ticker drill-down modal: {ticker, nombre, tipo, clientes:[{c,ars,usd,pct}]}
+  const [tkDrill,setTkDrill] = useState(null);
 
   const [sel,setSel]         = useState(null);
   const [tab,setTab]         = useState('global');
@@ -697,13 +741,35 @@ function App(){
   const cliDuration = useMemo(()=>calcDuration(cliAll),[cliAll]);
   const globDuration = useMemo(()=>calcDuration(rows),[rows]);
 
-  // Comparación con slot alternativo
+  // FIX compTotal: delta en ARS (neutro a TC) y en USD usando TC actual para ambos períodos
+  // Así el delta USD refleja variación de activos, no efecto TC
   const compTotal = useMemo(()=>{
     if(!compSlot||!sel)return null;
     const cliComp=compSlot.rows.filter(r=>r.comitente===sel);
-    const tot=cliComp.reduce((s,r)=>s+r.ars,0);
-    return{ars:tot,usd:tot/(compSlot.tc||1),fecha:compSlot.fecha};
-  },[compSlot,sel]);
+    const arsComp=cliComp.reduce((s,r)=>s+r.ars,0);
+    // Usar TC del slot ACTIVO para ambas fechas → delta limpio de efecto cambiario
+    const usdCompAtCurTc = arsComp / (tc||1);
+    return{ars:arsComp, usdAtCurTc:usdCompAtCurTc, fecha:compSlot.fecha,
+           note:'USD calculado al TC actual ('+tc.toLocaleString('es-AR')+')'};
+  },[compSlot,sel,tc]);
+
+  // Perfil de riesgo global para comparación vs cliente
+  const globalRiskProfile = useMemo(()=>{
+    if(!total)return null;
+    const usdExp=(byMonedaBucket['USD']||0)+(byMonedaBucket['USD Cable']||0);
+    return{
+      sobNacPct: riesgoSoberano.nacion/(total||1),
+      sobSubPct: riesgoSoberano.subnac/(total||1),
+      onPct:     riesgoSoberano.ons/(total||1),
+      usdPct:    usdExp/(total||1),
+      arsPct:    (byMonedaBucket['ARS']||0)/(total||1),
+      fciPct:    rows.filter(r=>r.tipo==='FCI').reduce((s,r)=>s+r.ars,0)/(total||1),
+      diversifAvg: byCliente.length>0
+        ? byCliente.reduce((s,c)=>s+(clienteRiesgo[c.c]?.diversif||0),0)/byCliente.length
+        : 0,
+      duracion: globDuration?.dur||null,
+    };
+  },[total,byMonedaBucket,riesgoSoberano,rows,byCliente,clienteRiesgo,globDuration]);
 
   /* KEYBOARD NAV */
   useEffect(()=>{
@@ -756,7 +822,109 @@ function App(){
      RENDERS
   ══════════════════════════════════════════ */
 
-  /* ── MULTI-SLOT PANEL ── */
+  // Helper: abrir modal de drill-down por ticker
+  function openDrill(ticker){
+    const tk=byTicker.find(t=>t.ticker===ticker);
+    if(!tk)return;
+    // Para cada cliente que tiene este ticker, calcular monto y % de su cartera
+    const cliData=[];
+    rows.forEach(r=>{
+      if(r.ticker!==ticker)return;
+      const cliTot=byCliente.find(c=>c.c===r.comitente)?.ars||1;
+      cliData.push({c:r.comitente,ars:r.ars,usd:r.usd,pctCartera:r.ars/cliTot,pctAUM:r.ars/total});
+    });
+    cliData.sort((a,b)=>b.ars-a.ars);
+    setTkDrill({ticker,nombre:tk.nombre,tipo:tk.tipo,totalArs:tk.totalArs,totalUsd:tk.totalUsd,nClientes:tk.nClientes,clientes:cliData});
+  }
+
+  /* ── MODAL TICKER DRILL ── */
+  function renderDrillModal(){
+    if(!tkDrill)return null;
+    const maxArs=tkDrill.clientes[0]?.ars||1;
+    return h('div',{className:'modal-overlay',onClick:()=>setTkDrill(null)},
+      h('div',{className:'modal',onClick:e=>e.stopPropagation()},
+        h('div',{className:'modal-head'},
+          h('div',{className:'modal-title'},
+            h('code',{style:{color:'#7ab0d0',marginRight:8}},tkDrill.ticker),
+            h('span',{style:{color:'#4a6a80',fontWeight:400,fontSize:11}},tkDrill.nombre)
+          ),
+          Tag(tkDrill.tipo),
+          h('button',{className:'modal-close',onClick:()=>setTkDrill(null)},'×')
+        ),
+        h('div',{className:'modal-body'},
+          h('div',{className:'modal-stat'},
+            h('div',{className:'modal-stat-item'},
+              h('div',{className:'modal-stat-label'},'AUM Total'),
+              h('div',{className:'modal-stat-val'},FMTM(tkDrill.totalArs))
+            ),
+            h('div',{className:'modal-stat-item'},
+              h('div',{className:'modal-stat-label'},'USD'),
+              h('div',{className:'modal-stat-val',style:{color:'#4ab880'}},FMTMU(tkDrill.totalUsd))
+            ),
+            h('div',{className:'modal-stat-item'},
+              h('div',{className:'modal-stat-label'},'% del AUM'),
+              h('div',{className:'modal-stat-val'},PCT(tkDrill.totalArs/total))
+            ),
+            h('div',{className:'modal-stat-item'},
+              h('div',{className:'modal-stat-label'},'Clientes'),
+              h('div',{className:'modal-stat-val'},tkDrill.nClientes)
+            )
+          ),
+          h('div',{style:{fontSize:9,color:'#2a5070',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:6}},'Distribución por comitente · click para ir'),
+          ...tkDrill.clientes.map(c=>
+            h('div',{key:c.c,className:'modal-cli-row',
+              onClick:()=>{setSel(c.c);setCliTab('pos');setTkDrill(null);}},
+              h('div',{className:'modal-cli-num'},'Comitente '+c.c),
+              h('div',{className:'modal-cli-bar-wrap'},
+                h('div',{className:'modal-cli-bar',style:{width:PCT(c.ars/maxArs),background:TCOL[tkDrill.tipo]||'#304060'}})
+              ),
+              h('div',{className:'modal-cli-ars'},FMTM(c.ars)),
+              h('div',{className:'modal-cli-pct',title:'% de la cartera del cliente'},
+                h('span',{style:{color:'#4a7090'}},PCT(c.pctCartera))
+              )
+            )
+          )
+        )
+      )
+    );
+  }
+
+  /* ── PANEL COMPARACIÓN RIESGO CLIENTE vs GLOBAL ── */
+  function renderRiskComparison(risk){
+    if(!globalRiskProfile)return null;
+    const g=globalRiskProfile;
+    // Métricas a comparar: [label, cliVal, globVal, umbral_sobre, umbral_bajo]
+    const metrics=[
+      {label:'Sob. Nacional',  cli:risk.sobNacPct||0, glob:g.sobNacPct, high:.15, low:-.15},
+      {label:'Subnacional',    cli:risk.sobSubPct||0, glob:g.sobSubPct, high:.15, low:-.15},
+      {label:'ON Corp.',       cli:risk.onPct||0,     glob:g.onPct,     high:.15, low:-.15},
+      {label:'Exposición USD', cli:risk.usdPct||0,    glob:g.usdPct,    high:.15, low:-.15},
+      {label:'Exposición ARS', cli:risk.arsPct||0,    glob:g.arsPct,    high:.15, low:-.15},
+      {label:'FCI',            cli:risk.fciPct||0,    glob:g.fciPct,    high:.10, low:-.10},
+    ];
+    return h('div',{className:'card full',style:{marginBottom:10}},
+      h('div',{className:'card-title'},'Perfil de riesgo: cliente vs. promedio cartera'),
+      h('div',{className:'risk-cmp-grid'},
+        ...metrics.map(m=>{
+          const delta=m.cli-m.glob;
+          const cls=Math.abs(delta)<0.03?'rcd-ok':delta>m.high?'rcd-over':'rcd-under';
+          const sign=delta>0?'+':'';
+          return h('div',{key:m.label,className:'risk-cmp-item'},
+            h('div',{className:'risk-cmp-label'},m.label),
+            h('div',{className:'risk-cmp-row'},
+              h('span',{className:'risk-cmp-who'},'Cliente'),
+              h('span',{className:'risk-cmp-val',style:{color:'#c0d8f0'}},PCT(m.cli))
+            ),
+            h('div',{className:'risk-cmp-row'},
+              h('span',{className:'risk-cmp-who'},'Global'),
+              h('span',{className:'risk-cmp-val',style:{color:'#3a6a8a'}},PCT(m.glob))
+            ),
+            h('span',{className:'risk-cmp-delta '+cls},sign+PCT(delta))
+          );
+        })
+      )
+    );
+  }
   function renderSlotPanel(){
     return h('div',{className:'file-slots no-print'},
       [0,1].map(i=>{
@@ -852,8 +1020,8 @@ function App(){
           h('div',{className:'card-title'},'Top instrumentos por AUM'),
           ...tickerRank.map(t=>{
             const p=t.totalArs/total;
-            return h('div',{key:t.ticker,className:'bar-row',onClick:()=>{setTab('ticker');setTkSearch(t.ticker);}},
-              h('div',{className:'bar-lbl'},h('code',{style:{fontSize:10,color:'#7ab0d0'}},t.ticker)),
+            return h('div',{key:t.ticker,className:'bar-row',onClick:()=>openDrill(t.ticker)},
+              h('div',{className:'bar-lbl'},h('code',{style:{fontSize:10,color:'#7ab0d0'}},t.ticker,' ↗')),
               h('div',{className:'bar-track'},h('div',{className:'bar-fill',style:{width:PCT(p),background:TCOL[t.tipo]||'#303a50'}})),
               h('div',{className:'bar-val'},FMTM(t.totalArs)+' · '+t.nClientes+' cli.')
             );
@@ -928,8 +1096,8 @@ function App(){
               h(Th,{c:'pctTotal',label:'% AUM',    sort:tkSort,r:true}) // FIX #1
             )),
             h('tbody',null,
-              tkPageData.map((t,i)=>h('tr',{key:i},
-                h('td',null,h('code',{style:{fontSize:10,color:'#7ab0d0'}},t.ticker)),
+              tkPageData.map((t,i)=>h('tr',{key:i,style:{cursor:'pointer'},onClick:()=>openDrill(t.ticker)},
+                h('td',null,h('code',{style:{fontSize:10,color:'#7ab0d0'}},t.ticker,' ↗')),
                 h('td',{style:{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#607080'}},t.nombre),
                 h('td',null,Tag(t.tipo)),
                 h('td',{style:{fontSize:10,color:'#2a5068'}},t.moneda),
@@ -1037,7 +1205,9 @@ function App(){
             h('tbody',null,
               globPage.map((r,i)=>h('tr',{key:i,style:{cursor:'pointer'},onClick:()=>setSel(r.comitente)},
                 h('td',null,h('b',{style:{color:'#6a9ab8'}},r.comitente)),
-                h('td',null,h('code',{style:{fontSize:10,color:'#7ab0d0'}},r.ticker)),
+                h('td',{onClick:e=>{e.stopPropagation();openDrill(r.ticker);}},
+                  h('code',{style:{fontSize:10,color:'#7ab0d0',cursor:'pointer',textDecoration:'underline dotted',textDecorationColor:'#2a5070'}},r.ticker)
+                ),
                 h('td',{style:{maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#607080'}},r.nombre),
                 h('td',null,Tag(r.tipo)),
                 h('td',{style:{fontSize:10,color:'#2a5068'}},r.moneda),
@@ -1101,9 +1271,10 @@ function App(){
           h('div',{className:'kpi-label'},'Patrimonio USD'),
           h('div',{className:'kpi-value usd'},FMTMU(cliTotalUSD)),
           compTotal&&h('div',{className:'kpi-sub'},
-            h('span',{className:cliTotalUSD>=compTotal.usd?'compare-delta-pos':'compare-delta-neg'},
-              (cliTotalUSD>=compTotal.usd?'▲':'▼')+' '+FMTMU(Math.abs(cliTotalUSD-compTotal.usd))+' USD'
-            )
+            h('span',{className:cliTotalUSD>=compTotal.usdAtCurTc?'compare-delta-pos':'compare-delta-neg'},
+              (cliTotalUSD>=compTotal.usdAtCurTc?'▲':'▼')+' '+FMTMU(Math.abs(cliTotalUSD-compTotal.usdAtCurTc))+' vs '+compTotal.fecha
+            ),
+            h('span',{style:{display:'block',fontSize:8,color:'#1e3a50',marginTop:1}},'TC constante (efecto cambiario excluido)')
           ),
           !compTotal&&h('div',{className:'kpi-sub'},'al TC '+tc.toLocaleString('es-AR'))
         ),
@@ -1135,6 +1306,9 @@ function App(){
         '⚠️ Futuros ROFEX: el monto ARS refleja el ',h('b',null,'margen depositado'),', no el nocional. '+
         'Multiplicá por el ratio nocional/margen para ver la exposición real. Verificar en ROFEX.'
       ),
+
+      // NUEVO: comparación de perfil de riesgo vs global
+      renderRiskComparison(risk),
 
       /* Sub-tabs */
       h('div',{className:'',style:{display:'flex',gap:6,marginBottom:10}},
@@ -1184,7 +1358,9 @@ function App(){
                   )),
                   h('tbody',null,
                     cliPage2.map((r,i)=>h('tr',{key:i},
-                      h('td',null,h('code',{style:{fontSize:10,color:'#7ab0d0'}},r.ticker)),
+                      h('td',{onClick:()=>openDrill(r.ticker),style:{cursor:'pointer'}},
+                        h('code',{style:{fontSize:10,color:'#7ab0d0',textDecoration:'underline dotted',textDecorationColor:'#2a5070'}},r.ticker,' ↗')
+                      ),
                       h('td',{style:{maxWidth:170,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'#607080'}},r.nombre),
                       h('td',null,Tag(r.tipo)),
                       h('td',{style:{fontSize:10,color:'#2a5068'}},r.moneda),
@@ -1291,11 +1467,11 @@ function App(){
 
               h('div',{className:'card',style:{flex:'1 1 220px'}},
                 h('div',{className:'card-title'},'Top posiciones'),
-                ...cliAll.sort((a,b)=>b.ars-a.ars).slice(0,10).map(r=>{
+                ...([...cliAll].sort((a,b)=>b.ars-a.ars)).slice(0,10).map(r=>{
                   const p=r.ars/cliTotal;
-                  return h('div',{key:r.ticker+r.tipo,style:{marginBottom:6}},
+                  return h('div',{key:r.ticker+r.tipo,style:{marginBottom:6,cursor:'pointer'},onClick:()=>openDrill(r.ticker)},
                     h('div',{style:{display:'flex',justifyContent:'space-between',fontSize:10}},
-                      h('code',{style:{color:'#7ab0d0',fontSize:10}},r.ticker),
+                      h('code',{style:{color:'#7ab0d0',fontSize:10}},r.ticker,' ↗'),
                       h('span',{style:{color:p>0.3?'#d08040':'#3a6080'}},PCT(p))
                     ),
                     h('div',{className:'bar-bg'},
@@ -1319,6 +1495,7 @@ function App(){
 
   /* ── LAYOUT ── */
   return h('div',{className:'layout'},
+    renderDrillModal(),
 
     h('div',{className:'sidebar'},
       h('div',{className:'sb-head'},
