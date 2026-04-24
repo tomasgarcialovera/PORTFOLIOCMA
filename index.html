@@ -47,7 +47,16 @@ const parseArgNum=s=>{
   return isNaN(v)?null:v;
 };
 
-/* ===== PARSER ===== */
+/* ===== MAPEO ORIGINAL ===== */
+const SMAP={
+  "U$S - Dólar":"Cash|USD",
+  "$ - Pesos":"Cash|ARS",
+  "CEDEAR / Pesos":"CEDEAR|ARS",
+  "Acciones / Pesos":"Acciones ARG|ARS",
+  "Fondos / Pesos":"FCI|ARS"
+};
+
+/* ===== PARSER ROBUSTO ===== */
 function parseCSV(text){
   const lines=text.split(/\r?\n/);
   const sep=lines[0]?.includes("\t")?"\t":";";
@@ -60,15 +69,26 @@ function parseCSV(text){
     const c0=(cols[0]||"").trim();
     if(!c0)continue;
 
+    if(c0.toLowerCase().startsWith("total"))continue;
+
     const ars=parseArgNum(cols[11]);
 
     if(ars===null){
+      const found=Object.keys(SMAP).find(k=>c0.includes(k));
+      if(found){
+        [tipo,moneda]=SMAP[found].split("|");
+        continue;
+      }
+
       const m=c0.match(/^(.+?)\s*-\s*.+?\/\s*(.+)$/);
-      if(m){ticker=m[1].trim();nombre=m[2].trim();}
+      if(m){
+        ticker=m[1].trim();
+        nombre=m[2].trim();
+      }
       continue;
     }
 
-    if(/^\d{3,7}$/.test(c0)&&ars>0){
+    if(/^\d{3,7}$/.test(c0) && ars>0){
       rows.push({comitente:c0,tipo,moneda,ticker,nombre,ars});
     }
   }
@@ -140,7 +160,7 @@ function App(){
   },[data]);
 
   const usdPct=useMemo(()=>{
-    const usd=data.filter(r=>r.moneda.includes("USD")).reduce((s,r)=>s+r.ars,0);
+    const usd=data.filter(r=>r.moneda && r.moneda.includes("USD")).reduce((s,r)=>s+r.ars,0);
     return total?usd/total:0;
   },[data,total]);
 
@@ -155,7 +175,10 @@ function App(){
     });
 
     Object.values(map).forEach(d=>{
-      const max=Math.max(...Object.values(d.tk))/d.tot;
+      const vals=Object.values(d.tk);
+      if(!vals.length)return;
+      const max=Math.max(...vals)/d.tot;
+
       if(max>0.4)score+=2;
       else if(max>0.25)score+=1;
 
